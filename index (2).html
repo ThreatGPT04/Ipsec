@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tunnel Hive — IKEv2 on Windows</title>
+  <meta name="description" content="A field-tested PowerShell toolkit for IPsec IKEv2 site-to-site VPN tunnels on Windows Server RRAS." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800;900&family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+:root {
+  --ink: #0d0c0a;
+  --ink-2: #16140f;
+  --line: #2a261d;
+  --cream: #f3ecdc;
+  --mute: #8f8776;
+  --honey: #ffb81c;
+  --honey-2: #ff7a1a;
+  --ok: #7dff9b;
+  --bad: #ff5a4e;
+  --display: "Unbounded", system-ui, sans-serif;
+  --body: "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --gut: clamp(16px, 4vw, 56px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; overflow-x: clip; }
+body {
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+body.loading { overflow: hidden; }
+a { color: inherit; text-decoration: none; }
+code { font-family: var(--mono); font-size: .88em; color: var(--honey); background: rgba(255,184,28,.08); padding: .1em .35em; border-radius: 4px; }
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.accent { color: var(--honey); }
+.outline { color: transparent; -webkit-text-stroke: 1.5px var(--cream); }
+.eyebrow { color: var(--honey); margin-bottom: 28px; }
+.big {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(40px, 7.2vw, 118px);
+  line-height: .95;
+  letter-spacing: -.035em;
+  text-transform: uppercase;
+}
+.big em { font-style: normal; color: var(--honey); }
+section { position: relative; padding: clamp(90px, 14vw, 180px) var(--gut); }
+.section-head { margin-bottom: clamp(48px, 7vw, 96px); }
+
+/* ---------- grain ---------- */
+.grain {
+  position: fixed; inset: -50%; z-index: 90; pointer-events: none; opacity: .07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 1.2s steps(6) infinite;
+}
+@keyframes grain { 0%{transform:translate(0,0)} 33%{transform:translate(-4%,3%)} 66%{transform:translate(3%,-2%)} 100%{transform:translate(0,0)} }
+
+/* ---------- loader ---------- */
+.loader {
+  position: fixed; inset: 0; z-index: 200; background: var(--honey); color: var(--ink);
+  display: grid; place-items: center; align-content: center; gap: 24px;
+  transition: clip-path 1s cubic-bezier(.77,0,.18,1);
+  clip-path: inset(0 0 0 0);
+}
+.loader.done { clip-path: inset(0 0 100% 0); }
+.loader__hex {
+  width: 90px; height: 104px; background: var(--ink);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  animation: spin 1.6s cubic-bezier(.6,0,.4,1) infinite;
+}
+.loader__line { font-size: 14px; font-weight: 600; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- cursor ---------- */
+.cursor {
+  position: fixed; left: 0; top: 0; z-index: 150; pointer-events: none;
+  width: 14px; height: 16px; margin: -8px 0 0 -7px; background: var(--honey);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  transition: width .35s cubic-bezier(.2,.8,.2,1), height .35s cubic-bezier(.2,.8,.2,1), margin .35s cubic-bezier(.2,.8,.2,1);
+  display: grid; place-items: center; mix-blend-mode: difference;
+}
+.cursor.big { width: 96px; height: 110px; margin: -55px 0 0 -48px; mix-blend-mode: normal; }
+.cursor__label { font: 600 11px var(--mono); text-transform: uppercase; color: var(--ink); opacity: 0; transition: opacity .2s; }
+.cursor.big .cursor__label { opacity: 1; }
+@media (hover: none), (pointer: coarse) { .cursor { display: none; } }
+@media (hover: hover) and (pointer: fine) { body, a, button { cursor: none; } }
+
+/* ---------- nav ---------- */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px var(--gut); mix-blend-mode: difference;
+}
+.nav__logo { display: flex; align-items: center; gap: 10px; font: 800 14px var(--display); letter-spacing: .02em; }
+.nav__logo polygon { fill: var(--honey); transition: transform .6s; transform-origin: center; }
+.nav__logo:hover polygon { transform: rotate(180deg); }
+.nav__links { display: flex; gap: 28px; }
+.nav__links a, .nav__cta { position: relative; }
+.nav__links a::after, .nav__cta::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: currentColor;
+  transform: scaleX(0); transform-origin: right; transition: transform .4s;
+}
+.nav__links a:hover::after, .nav__cta:hover::after { transform: scaleX(1); transform-origin: left; }
+@media (max-width: 760px) { .nav__links { display: none; } .hero__meta span + span { display: none; } }
+
+/* ---------- hero ---------- */
+.hero {
+  min-height: 100svh; display: flex; flex-direction: column; justify-content: flex-end;
+  padding-top: 120px; padding-bottom: 48px; overflow: hidden;
+}
+.hero__hive { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.hero > *:not(canvas) { position: relative; z-index: 1; }
+.hero__meta { position: absolute !important; top: 96px; left: var(--gut); right: var(--gut); display: flex; justify-content: space-between; color: var(--mute); }
+.hero__title {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(54px, 13.5vw, 230px); line-height: .86; letter-spacing: -.05em;
+  pointer-events: none;
+}
+.hero__title .line { display: block; overflow: hidden; padding-bottom: .04em; }
+.hero__title .word { display: inline-block; transform: translateY(110%); transition: transform 1.1s cubic-bezier(.19,1,.22,1); }
+.hero__title .outline { -webkit-text-stroke: 2px var(--cream); }
+.hero__title .dot { color: var(--honey); }
+body.ready .hero__title .word { transform: none; }
+.hero__foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; margin-top: 40px; flex-wrap: wrap; }
+.hero__lede { max-width: 440px; color: #cfc6b3; }
+.hero__status { border: 1px solid var(--line); background: rgba(13,12,10,.6); backdrop-filter: blur(8px); padding: 14px 18px; min-width: 260px; display: grid; gap: 6px; }
+.hero__status div { display: flex; justify-content: space-between; gap: 24px; }
+.hero__status .k { color: var(--mute); }
+.hero__status .v { color: var(--honey); }
+.hero__status .ok { color: var(--ok); }
+.hero__status .ok::before { content: "● "; animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.hero__scroll { margin-top: 40px; color: var(--mute); align-self: flex-start; }
+
+/* ---------- marquee ---------- */
+.marquee { border-block: 1px solid var(--line); background: var(--honey); color: var(--ink); overflow: hidden; transform: rotate(-2deg) scale(1.04); margin-block: 20px; }
+.marquee__track { display: flex; width: max-content; gap: 32px; align-items: center; padding: 18px 0; animation: marquee 28s linear infinite; font: 800 clamp(22px, 3.4vw, 44px) var(--display); text-transform: uppercase; white-space: nowrap; }
+.marquee__track i { font-style: normal; font-size: .6em; }
+.marquee:hover .marquee__track { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ---------- manifesto ---------- */
+.manifesto__text {
+  font-family: var(--display); font-weight: 600; font-size: clamp(26px, 4.2vw, 64px);
+  line-height: 1.12; letter-spacing: -.02em; max-width: 1400px;
+}
+.manifesto__text .w { color: #3a352b; transition: color .25s; }
+.manifesto__text .w.lit { color: var(--cream); }
+.manifesto__text .w.hot { color: var(--honey); }
+
+.terminal { margin-top: 64px; max-width: 860px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 10px; overflow: hidden; text-transform: none; letter-spacing: 0; }
+.terminal__bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--mute); }
+.terminal__bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.terminal__bar i:first-child { background: var(--bad); }
+.terminal__bar span { margin-left: 8px; }
+.terminal pre { padding: 20px; font: 13px/1.7 var(--mono); overflow-x: auto; color: var(--cream); white-space: pre; }
+.c-dim { color: var(--mute); } .c-bad { color: var(--bad); } .c-key { color: var(--honey); } .c-str { color: var(--ok); }
+.strike-in { background: linear-gradient(var(--bad), var(--bad)) no-repeat 0 55% / 0 2px; transition: background-size 1s .4s; }
+.reveal.in .strike-in { background-size: 100% 2px; }
+
+.reveal { opacity: 0; transform: translateY(40px); transition: opacity 1s, transform 1s cubic-bezier(.19,1,.22,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* ---------- breaks: stacking cards ---------- */
+.stack { display: grid; gap: 0; }
+.card {
+  position: sticky; top: calc(90px + var(--i) * 28px);
+  display: grid; grid-template-columns: minmax(120px, 28%) 1fr; gap: clamp(20px, 4vw, 64px);
+  min-height: 62vh; padding: clamp(28px, 4vw, 56px);
+  background: var(--ink-2); border: 1px solid var(--line); border-radius: 22px; margin-bottom: 8vh;
+  box-shadow: 0 -30px 60px rgba(0,0,0,.55);
+  transform-origin: top center;
+}
+.card:nth-child(2) { background: #1c190f; }
+.card:nth-child(3) { background: var(--honey); color: var(--ink); border-color: var(--honey); }
+.card:nth-child(3) code { color: var(--ink); background: rgba(0,0,0,.08); }
+.card:nth-child(3) .card__fix { border-color: rgba(0,0,0,.25); }
+.card:nth-child(3) .card__fix span { background: var(--ink); color: var(--honey); }
+.card__num { font: 900 clamp(90px, 16vw, 260px)/.8 var(--display); letter-spacing: -.06em; color: transparent; -webkit-text-stroke: 2px currentColor; }
+.card:not(:nth-child(3)) .card__num { -webkit-text-stroke-color: var(--honey); }
+.card__body { display: flex; flex-direction: column; gap: 20px; justify-content: flex-end; }
+.card h3 { font: 800 clamp(26px, 3.6vw, 54px)/1 var(--display); letter-spacing: -.03em; text-transform: uppercase; }
+.card p { max-width: 560px; font-size: 18px; opacity: .85; }
+.card__fix { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 18px; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.card__fix span { background: var(--honey); color: var(--ink); padding: 3px 8px; border-radius: 3px; font-weight: 600; }
+@media (max-width: 760px) { .card { grid-template-columns: 1fr; min-height: auto; top: calc(76px + var(--i) * 18px); } }
+
+/* ---------- build: horizontal pinned ---------- */
+.build { padding: 0; }
+.build__pin { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; justify-content: center; gap: 48px; padding: 90px 0 40px; }
+.build__head { padding: 0 var(--gut); display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 24px; }
+.build__head .eyebrow { width: 100%; margin-bottom: 0; }
+.build__progress { width: min(320px, 60vw); height: 2px; background: var(--line); }
+.build__progress span { display: block; height: 100%; width: 0; background: var(--honey); }
+.build__track { display: flex; gap: 24px; padding: 0 var(--gut); will-change: transform; }
+.step {
+  flex: 0 0 clamp(280px, 34vw, 460px); min-height: 360px; border: 1px solid var(--line); border-radius: 18px; padding: 32px;
+  display: flex; flex-direction: column; gap: 16px; background: var(--ink-2);
+  transition: background .4s, color .4s, transform .4s;
+}
+.step:hover { background: var(--honey); color: var(--ink); transform: translateY(-8px) rotate(-1deg); }
+.step:hover code { color: var(--ink); background: rgba(0,0,0,.1); }
+.step__n { font: 900 72px/1 var(--display); color: var(--honey); letter-spacing: -.05em; transition: color .4s; }
+.step:hover .step__n { color: var(--ink); }
+.step h4 { font: 800 26px var(--display); text-transform: uppercase; letter-spacing: -.02em; }
+.step p { opacity: .8; flex: 1; }
+.step > code { align-self: flex-start; }
+@media (max-width: 760px) {
+  .build { padding: clamp(90px, 14vw, 180px) 0; }
+  .build__pin { position: static; height: auto; }
+  .build__track { flex-direction: column; transform: none !important; }
+  .step { flex-basis: auto; min-height: 0; }
+  .build__progress { display: none; }
+}
+
+/* ---------- forge ---------- */
+.forge__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 56px); align-items: start; }
+.forge__form { display: grid; gap: 28px; }
+fieldset { border: 0; display: grid; gap: 12px; min-width: 0; }
+legend { color: var(--honey); margin-bottom: 8px; }
+label { display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 12px; font-size: 14px; color: var(--mute); }
+input {
+  width: 100%;
+  font: 14px var(--mono); color: var(--cream); background: transparent; border: 0; border-bottom: 1px solid var(--line);
+  padding: 8px 2px; outline: none; transition: border-color .3s; min-width: 0;
+}
+input:focus { border-color: var(--honey); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips button {
+  font: 600 12px var(--mono); color: var(--cream); background: transparent; border: 1px solid var(--line);
+  padding: 10px 14px; border-radius: 999px; transition: all .25s;
+}
+.chips button:hover { border-color: var(--honey); }
+.chips button.on { background: var(--honey); color: var(--ink); border-color: var(--honey); }
+.forge__out { position: sticky; top: 90px; }
+.forge__out .terminal { margin-top: 0; max-width: none; }
+.forge__out pre { max-height: 70vh; }
+.copy { margin-left: auto; font: 600 11px var(--mono); text-transform: uppercase; background: var(--honey); color: var(--ink); border: 0; padding: 6px 12px; border-radius: 4px; }
+.note { margin-top: 14px; color: var(--mute); text-transform: none; letter-spacing: 0; }
+.flash { animation: flash .6s; }
+@keyframes flash { from { background: rgba(255,184,28,.18); } }
+@media (max-width: 900px) {
+  .forge__grid { grid-template-columns: minmax(0, 1fr); }
+  .forge__out { position: static; }
+  label { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ---------- errors ---------- */
+.errlist { list-style: none; border-top: 1px solid var(--line); }
+.err { border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
+.err::before { content: ""; position: absolute; inset: 0; background: var(--honey); transform: translateY(101%); transition: transform .5s cubic-bezier(.19,1,.22,1); z-index: 0; }
+.err:hover::before, .err.open::before { transform: none; }
+.err > * { position: relative; z-index: 1; }
+.err:hover, .err.open { color: var(--ink); }
+.err:hover code, .err.open code { color: var(--ink); background: rgba(0,0,0,.1); }
+.err__row {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 40px; align-items: center; gap: 16px;
+  padding: clamp(18px, 3vw, 34px) 0; background: none; border: 0; color: inherit; text-align: left;
+}
+.err__code { font: 900 clamp(34px, 7vw, 110px)/1 var(--display); letter-spacing: -.05em; }
+.err__name { font: 600 clamp(14px, 1.6vw, 22px) var(--display); text-transform: uppercase; }
+.err__plus { font: 400 40px var(--display); transition: transform .4s; justify-self: end; }
+.err.open .err__plus { transform: rotate(45deg); }
+.err__detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s cubic-bezier(.19,1,.22,1); }
+.err__detail p { overflow: hidden; max-width: 760px; font-size: 18px; }
+.err.open .err__detail { grid-template-rows: 1fr; }
+.err.open .err__detail p { padding-bottom: 32px; }
+@media (max-width: 640px) { .err__row { grid-template-columns: 1fr 32px; } .err__name { grid-column: 1; } .err__plus { grid-row: 1 / span 2; grid-column: 2; } }
+
+/* ---------- matrix ---------- */
+.matrix__grid { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cell { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: clamp(20px, 3vw, 40px); display: grid; gap: 30px; min-height: 180px; align-content: space-between; transition: background .3s; }
+.cell span { color: var(--mute); }
+.cell b { font: 800 clamp(20px, 2.4vw, 34px)/1.05 var(--display); letter-spacing: -.02em; }
+.cell:hover { background: var(--ink-2); }
+.cell:hover b { color: var(--honey); }
+.matrix__note { margin-top: 28px; color: var(--mute); max-width: 720px; }
+@media (max-width: 760px) { .matrix__grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 460px) { .matrix__grid { grid-template-columns: 1fr; } }
+
+/* ---------- footer ---------- */
+.foot { padding: clamp(60px, 10vw, 140px) var(--gut) 32px; border-top: 1px solid var(--line); overflow: hidden; }
+.foot__huge { display: flex; flex-direction: column; font: 900 clamp(48px, 12vw, 210px)/.88 var(--display); text-transform: uppercase; letter-spacing: -.05em; }
+.foot__huge .outline { -webkit-text-stroke: 2px var(--honey); transition: color .5s; }
+.foot__huge:hover .outline { color: var(--honey); }
+.foot__row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 64px; color: var(--mute); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .hero__title .word, .reveal { transform: none; opacity: 1; }
+  html { scroll-behavior: auto; }
+}
+</style>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,4 90,27 90,73 50,96 10,73 10,27' fill='%23ffb81c'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+  <!-- Loader: "negotiating" the page like an SA -->
+  <div class="loader" id="loader" aria-hidden="true">
+    <div class="loader__hex"></div>
+    <div class="loader__line mono">IKE_SA_INIT <span id="loaderPct">000</span>%</div>
+  </div>
+
+  <div class="cursor" id="cursor" aria-hidden="true"><span class="cursor__label" id="cursorLabel"></span></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="nav__logo" href="#top" data-cursor="home">
+      <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true"><polygon points="50,4 90,27 90,73 50,96 10,73 10,27" /></svg>
+      <span>TUNNEL/HIVE</span>
+    </a>
+    <nav class="nav__links mono">
+      <a href="#breaks">Breaks</a>
+      <a href="#build">Build</a>
+      <a href="#forge">Forge</a>
+      <a href="#errors">Errors</a>
+    </nav>
+    <a class="nav__cta mono" href="https://github.com/ThreatGPT04/IPSec-tunnel-windows" target="_blank" rel="noopener" data-cursor="repo">GitHub ↗</a>
+  </header>
+
+  <main id="top">
+
+    <!-- HERO -->
+    <section class="hero">
+      <canvas id="hive" class="hero__hive" aria-hidden="true"></canvas>
+      <div class="hero__meta mono">
+        <span>● Windows Server 2019 / 2022</span>
+        <span>RRAS · IKEv2 · PSK</span>
+      </div>
+      <h1 class="hero__title">
+        <span class="line"><span class="word">Build</span> <span class="word">the</span></span>
+        <span class="line"><span class="word outline">tunnel</span><span class="word dot">.</span></span>
+        <span class="line"><span class="word">Keep</span> <span class="word">it</span> <span class="word accent">up.</span></span>
+      </h1>
+      <div class="hero__foot">
+        <p class="hero__lede">A field-tested PowerShell toolkit for IPsec IKEv2 site-to-site VPNs on Windows. It comes from one live deployment against a Cisco ASA, and it records every error that deployment hit.</p>
+        <div class="hero__status mono" id="status">
+          <div><span class="k">Phase 1</span><span class="v" data-cycle="AES256|SHA384|ECP256">AES256</span></div>
+          <div><span class="k">Phase 2</span><span class="v" data-cycle="ESP|AES256|SHA256128|PFS ECP256">ESP</span></div>
+          <div><span class="k">State</span><span class="v ok">CONNECTED</span></div>
+        </div>
+      </div>
+      <a class="hero__scroll mono" href="#manifesto">scroll to encrypt ↓</a>
+    </section>
+
+    <!-- MARQUEE -->
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__track">
+        <span>IKEv2</span><i>⬢</i><span>AES256</span><i>⬢</i><span>SHA384</span><i>⬢</i><span>ECP256</span><i>⬢</i><span>PFS</span><i>⬢</i><span>RRAS</span><i>⬢</i><span>TRAFFIC SELECTORS</span><i>⬢</i><span>CISCO ASA</span><i>⬢</i>
+        <span>IKEv2</span><i>⬢</i><span>AES256</span><i>⬢</i><span>SHA384</span><i>⬢</i><span>ECP256</span><i>⬢</i><span>PFS</span><i>⬢</i><span>RRAS</span><i>⬢</i><span>TRAFFIC SELECTORS</span><i>⬢</i><span>CISCO ASA</span><i>⬢</i>
+      </div>
+    </div>
+
+    <!-- MANIFESTO: words light up on scroll -->
+    <section class="manifesto" id="manifesto">
+      <p class="mono eyebrow">[ 00 — the problem ]</p>
+      <p class="manifesto__text" id="manifestoText">Windows native IPsec in tunnel mode ignores the Phase 1 crypto you give it. It quietly falls back to DHGroup2, AES128 and SHA1 on every negotiation. You can script around it for days and it won't change. RRAS has its own IKEv2 stack, and that stack does honour a custom policy.</p>
+      <div class="terminal mono reveal">
+        <div class="terminal__bar"><i></i><i></i><i></i><span>PS C:\&gt;</span></div>
+        <pre><span class="c-dim">PS&gt;</span> netsh advfirewall consec show rule name="Primary-Tunnel" verbose
+<span class="c-dim">…</span>
+MainModeSecMethods:  <span class="c-bad strike-in">DHGroup2-AES128-SHA1</span>   <span class="c-dim"># always. regardless.</span></pre>
+      </div>
+    </section>
+
+    <!-- THREE BREAKS: stacking sticky cards -->
+    <section class="breaks" id="breaks">
+      <div class="section-head">
+        <p class="mono eyebrow">[ 01 — failure modes ]</p>
+        <h2 class="big">Three things<br/>that <em>will</em> break<br/>your tunnel.</h2>
+      </div>
+      <div class="stack">
+        <article class="card" style="--i:0">
+          <div class="card__num">01</div>
+          <div class="card__body">
+            <h3>Native IPsec ignores your Phase 1.</h3>
+            <p><code>-MainModeCryptoSet</code> doesn't exist on tunnel-mode rules. Custom sets get created but are never linked, and a 2019 → 2022 upgrade doesn't change that.</p>
+            <div class="card__fix mono"><span>FIX</span> Switch to RRAS and <code>Set-VpnS2SInterface -CustomPolicy</code></div>
+          </div>
+        </article>
+        <article class="card" style="--i:1">
+          <div class="card__num">02</div>
+          <div class="card__body">
+            <h3>Ghost rules still speak IKEv1.</h3>
+            <p>Native rules left over from earlier attempts keep firing IKEv1 next to your IKEv2. The ASA sees mixed traffic and fills its logs with <code>IKE MM</code> errors.</p>
+            <div class="card__fix mono"><span>FIX</span> <code>Get-NetIPsecRule | Remove-NetIPsecRule</code></div>
+          </div>
+        </article>
+        <article class="card" style="--i:2">
+          <div class="card__num">03</div>
+          <div class="card__body">
+            <h3>Wildcard selectors get rejected.</h3>
+            <p>By default RRAS proposes <code>0.0.0.0/0</code>. An ASA with a specific crypto map answers <em>“Crypto Map Policy not found.”</em></p>
+            <div class="card__fix mono"><span>FIX</span> Explicit <code>New-VpnTrafficSelector</code> (script 03)</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- BUILD: pinned horizontal scroll -->
+    <section class="build" id="build">
+      <div class="build__pin">
+        <div class="build__head">
+          <p class="mono eyebrow">[ 02 — the build ]</p>
+          <h2 class="big">Six scripts.<br/>One tunnel.</h2>
+          <div class="build__progress"><span id="buildBar"></span></div>
+        </div>
+        <div class="build__track" id="buildTrack">
+          <div class="step"><span class="step__n">01</span><h4>setup-rras</h4><p>Install RemoteAccess and Routing, then configure the server as a LAN router. If you skip the LAN router step, you get error 633.</p><code>Install-WindowsFeature RemoteAccess, Routing</code></div>
+          <div class="step"><span class="step__n">02</span><h4>create-tunnel</h4><p>Primary and backup S2S interfaces with a full custom policy, authenticated with a PSK read from the environment.</p><code>Add-VpnS2SInterface -Protocol Ikev2</code></div>
+          <div class="step"><span class="step__n">03</span><h4>traffic-selectors</h4><p>Replace the wildcard <code>0.0.0.0/0</code> selectors with exact local and remote ranges. This is the fix for the Cisco "Crypto Map Policy not found" rejection.</p><code>New-VpnTrafficSelector</code></div>
+          <div class="step"><span class="step__n">04</span><h4>verify-tunnel</h4><p>Read back what RRAS actually negotiates, not just what you configured.</p><code>Get-VpnS2SInterface</code></div>
+          <div class="step"><span class="step__n">05</span><h4>test-connection</h4><p>Connect the tunnel and probe your application ports end to end.</p><code>Test-NetConnection -Port 443</code></div>
+          <div class="step"><span class="step__n">06</span><h4>cleanup</h4><p>Tear everything down, including leftover native rules.</p><code>Remove-VpnS2SInterface -Force</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FORGE: interactive generator -->
+    <section class="forge" id="forge">
+      <div class="section-head">
+        <p class="mono eyebrow">[ 03 — tunnel forge ]</p>
+        <h2 class="big">Pick your crypto.<br/>Get the <span class="accent">PowerShell.</span></h2>
+      </div>
+      <div class="forge__grid">
+        <form class="forge__form" id="forgeForm" autocomplete="off">
+          <fieldset>
+            <legend class="mono">Endpoints</legend>
+            <label>Tunnel name<input name="name" value="VPN-Primary" /></label>
+            <label>Local server IP<input name="local" value="10.0.0.100" /></label>
+            <label>Remote gateway<input name="gw" value="203.0.113.1" /></label>
+            <label>Remote subnet start<input name="rs" value="10.1.0.0" /></label>
+            <label>Remote subnet end<input name="re" value="10.1.0.255" /></label>
+            <label>Remote subnet / mask<input name="subnet" value="10.1.0.0/24" /></label>
+          </fieldset>
+          <fieldset>
+            <legend class="mono">Phase 1 · IKE</legend>
+            <div class="chips" data-name="p1e"><button type="button">AES128</button><button type="button">AES192</button><button type="button" class="on">AES256</button></div>
+            <div class="chips" data-name="p1i"><button type="button">SHA256</button><button type="button" class="on">SHA384</button><button type="button">SHA512</button></div>
+            <div class="chips" data-name="p1d"><button type="button">DH14</button><button type="button" class="on">ECP256</button><button type="button">ECP384</button></div>
+          </fieldset>
+          <fieldset>
+            <legend class="mono">Phase 2 · ESP</legend>
+            <div class="chips" data-name="p2e"><button type="button">AES128</button><button type="button">AES192</button><button type="button" class="on">AES256</button></div>
+            <div class="chips" data-name="p2i"><button type="button" class="on">SHA256128</button><button type="button">SHA384</button><button type="button">SHA512</button></div>
+            <div class="chips" data-name="p2p"><button type="button">DH14</button><button type="button" class="on">ECP256</button><button type="button">ECP384</button></div>
+          </fieldset>
+        </form>
+        <div class="forge__out">
+          <div class="terminal mono">
+            <div class="terminal__bar"><i></i><i></i><i></i><span>forge.ps1</span><button class="copy" id="copyBtn" type="button" data-cursor="copy">copy</button></div>
+            <pre id="forgeOut"></pre>
+          </div>
+          <p class="note mono">PSK is never embedded. Set <code>$env:VPN_PSK</code> in the session first.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ERRORS: codes as giant hover rows -->
+    <section class="errors" id="errors">
+      <div class="section-head">
+        <p class="mono eyebrow">[ 04 — field notes ]</p>
+        <h2 class="big">Errors we<br/>already hit.</h2>
+      </div>
+      <ul class="errlist">
+        <li class="err" data-cursor="open">
+          <button class="err__row" type="button"><span class="err__code">13816</span><span class="err__name">IKE auth failed</span><span class="err__plus">+</span></button>
+          <div class="err__detail"><p>Phase 1 SA_INIT succeeds and authentication fails. In production this is usually a traffic-selector mismatch (wildcards), and less often a PSK mismatch. Check the selectors first, then compare the PSK character by character.</p></div>
+        </li>
+        <li class="err" data-cursor="open">
+          <button class="err__row" type="button"><span class="err__code">633</span><span class="err__name">Port already in use</span><span class="err__plus">+</span></button>
+          <div class="err__detail"><p>RRAS isn't configured as a LAN router. Open <code>rrasmgmt.msc</code>, choose Configure → Custom → LAN Routing → Finish, then start the service.</p></div>
+        </li>
+        <li class="err" data-cursor="open">
+          <button class="err__row" type="button"><span class="err__code">IKE MM</span><span class="err__name">Cisco sees IKEv1</span><span class="err__plus">+</span></button>
+          <div class="err__detail"><p>Main Mode is IKEv1. Old native Windows IPsec rules are still active, so remove every rule, main-mode crypto set and quick-mode crypto set.</p></div>
+        </li>
+        <li class="err" data-cursor="open">
+          <button class="err__row" type="button"><span class="err__code">0x80070057</span><span class="err__name">Invalid argument</span><span class="err__plus">+</span></button>
+          <div class="err__detail"><p><code>Set-NetIPsecRule -KeyModule IKEv2</code> on tunnel mode. There's no workaround for it on native IPsec, so use RRAS instead.</p></div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- CRYPTO MATRIX -->
+    <section class="matrix">
+      <p class="mono eyebrow">[ 05 — supported ]</p>
+      <div class="matrix__grid">
+        <div class="cell"><span class="mono">P1 · Enc</span><b>AES 128 / 192 / 256</b></div>
+        <div class="cell"><span class="mono">P1 · Int</span><b>SHA 256 / 384 / 512</b></div>
+        <div class="cell"><span class="mono">P1 · DH</span><b>14 · 19 · 20 · 21</b></div>
+        <div class="cell"><span class="mono">P2 · Proto</span><b>ESP</b></div>
+        <div class="cell"><span class="mono">P2 · Enc</span><b>AES 128 / 192 / 256</b></div>
+        <div class="cell"><span class="mono">P2 · PFS</span><b>DH14 · ECP256 · ECP384</b></div>
+      </div>
+      <p class="matrix__note">RRAS labels SHA-256 as <code>SHA256128</code>. Wireshark confirms it sends <code>AUTH_HMAC_SHA2_256_128</code>, as specified in RFC 4307.</p>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <a class="foot__huge" href="https://github.com/ThreatGPT04/IPSec-tunnel-windows" target="_blank" rel="noopener" data-cursor="clone">
+      <span>git clone</span><span class="outline">the hive ↗</span>
+    </a>
+    <div class="foot__row mono">
+      <span>MIT License</span>
+      <span>Built from a real deployment</span>
+      <a href="#top">Back to top ↑</a>
+    </div>
+  </footer>
+
+  <script>
+(() => {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const finePointer = matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+  /* ---------- loader ---------- */
+  document.body.classList.add("loading");
+  const loader = $("#loader"), pct = $("#loaderPct");
+  let p = 0;
+  const tick = () => {
+    p = Math.min(100, p + Math.ceil(Math.random() * (reduce ? 100 : 9)));
+    pct.textContent = String(p).padStart(3, "0");
+    if (p < 100) return setTimeout(tick, 40);
+    pct.parentElement.textContent = "CHILD_SA ESTABLISHED";
+    setTimeout(() => {
+      loader.classList.add("done");
+      document.body.classList.remove("loading");
+      document.body.classList.add("ready");
+      setTimeout(() => loader.remove(), 1100);
+    }, 280);
+  };
+  tick();
+
+  /* ---------- custom cursor ---------- */
+  const cursor = $("#cursor"), label = $("#cursorLabel");
+  const mouse = { x: innerWidth / 2, y: innerHeight / 2, active: false };
+  if (finePointer) {
+    let cx = mouse.x, cy = mouse.y;
+    addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+    const loop = () => {
+      cx += (mouse.x - cx) * 0.22; cy += (mouse.y - cy) * 0.22;
+      cursor.style.transform = `translate(${cx}px, ${cy}px)`;
+      requestAnimationFrame(loop);
+    };
+    loop();
+    $$("[data-cursor]").forEach(el => {
+      el.addEventListener("mouseenter", () => { label.textContent = el.dataset.cursor; cursor.classList.add("big"); });
+      el.addEventListener("mouseleave", () => cursor.classList.remove("big"));
+    });
+  }
+
+  /* ---------- hero: honeycomb field with packets ---------- */
+  const canvas = $("#hive"), ctx = canvas.getContext("2d");
+  let W, H, dpr, cells = [], packets = [];
+  const R = 34; // hex radius
+  const build = () => {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cells = [];
+    const w = Math.sqrt(3) * R, h = 1.5 * R;
+    for (let row = -1, y = 0; y < H + R * 2; row++, y = row * h)
+      for (let col = -1; col * w < W + w; col++)
+        cells.push({ x: col * w + (row & 1 ? w / 2 : 0), y, glow: 0 });
+    packets = [];
+  };
+  const hex = (x, y, r) => {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 180 * (60 * i - 30);
+      ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+    }
+    ctx.closePath();
+  };
+  const spawn = () => {
+    const y = H * (0.3 + Math.random() * 0.5);
+    packets.push({ x: -40, y, v: 2 + Math.random() * 4, len: 60 + Math.random() * 140 });
+  };
+  let heroVisible = true;
+  new IntersectionObserver(([e]) => (heroVisible = e.isIntersecting)).observe(canvas);
+  const draw = () => {
+    if (heroVisible) {
+      ctx.clearRect(0, 0, W, H);
+      const rect = canvas.getBoundingClientRect();
+      const mx = mouse.x - rect.left, my = mouse.y - rect.top;
+      for (const c of cells) {
+        const d = Math.hypot(c.x - mx, c.y - my);
+        const target = mouse.active ? Math.max(0, 1 - d / 220) : 0;
+        c.glow += (target - c.glow) * 0.12;
+        for (const pk of packets) if (Math.abs(c.y - pk.y) < R && c.x < pk.x && c.x > pk.x - pk.len) c.glow = Math.max(c.glow, 0.55);
+        hex(c.x, c.y, R - 3);
+        if (c.glow > 0.02) {
+          ctx.fillStyle = `rgba(255,184,28,${c.glow * 0.85})`;
+          ctx.fill();
+        }
+        ctx.strokeStyle = `rgba(243,236,220,${0.05 + c.glow * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      packets.forEach(pk => (pk.x += pk.v));
+      packets = packets.filter(pk => pk.x - pk.len < W + 40);
+      if (!reduce && Math.random() < 0.02 && packets.length < 4) spawn();
+    }
+    if (!reduce || mouse.active) requestAnimationFrame(draw);
+  };
+  build(); draw();
+  addEventListener("resize", () => { build(); if (reduce) draw(); });
+
+  /* ---------- hero status cycle ---------- */
+  $$("[data-cycle]").forEach(el => {
+    const vals = el.dataset.cycle.split("|"); let i = 0;
+    if (!reduce) setInterval(() => { i = (i + 1) % vals.length; el.textContent = vals[i]; }, 1400);
+  });
+
+  /* ---------- manifesto: word-by-word light-up ---------- */
+  const mt = $("#manifestoText");
+  const hot = /DHGroup2|AES128|SHA1|RRAS|IKEv2|custom/i;
+  mt.innerHTML = mt.textContent.trim().split(/\s+/)
+    .map(w => `<span class="w${hot.test(w) ? " is-hot" : ""}">${w}</span>`).join(" ");
+  const words = $$(".w", mt);
+
+  /* ---------- reveals ---------- */
+  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add("in")), { threshold: 0.3 });
+  $$(".reveal").forEach(el => io.observe(el));
+
+  /* ---------- scroll-driven bits ---------- */
+  const buildSec = $("#build"), track = $("#buildTrack"), bar = $("#buildBar");
+  const cards = $$(".card");
+  const isMobile = () => innerWidth <= 760;
+  const sizeBuild = () => {
+    if (isMobile()) { buildSec.style.height = ""; return; }
+    const extra = track.scrollWidth - innerWidth;
+    buildSec.style.height = `${innerHeight + Math.max(0, extra)}px`;
+  };
+  const onScroll = () => {
+    // manifesto
+    const r = mt.getBoundingClientRect();
+    const prog = Math.min(1, Math.max(0, (innerHeight * 0.85 - r.top) / (r.height + innerHeight * 0.35)));
+    const n = Math.floor(prog * words.length);
+    words.forEach((w, i) => {
+      w.classList.toggle("lit", i < n);
+      w.classList.toggle("hot", i < n && w.classList.contains("is-hot"));
+    });
+    // horizontal build
+    if (!isMobile()) {
+      const br = buildSec.getBoundingClientRect();
+      const total = buildSec.offsetHeight - innerHeight;
+      const t = Math.min(1, Math.max(0, -br.top / total));
+      const extra = track.scrollWidth - innerWidth;
+      track.style.transform = `translateX(${-t * Math.max(0, extra)}px)`;
+      bar.style.width = `${t * 100}%`;
+    }
+    // stacking cards shrink as next card covers them
+    cards.forEach((c, i) => {
+      const next = cards[i + 1];
+      if (!next) return;
+      const nr = next.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      const cover = Math.min(1, Math.max(0, 1 - (nr.top - cr.top) / cr.height));
+      c.style.transform = reduce ? "" : `scale(${1 - cover * 0.06})`;
+      c.style.filter = `brightness(${1 - cover * 0.35})`;
+    });
+  };
+  sizeBuild(); onScroll();
+  addEventListener("scroll", onScroll, { passive: true });
+  addEventListener("resize", () => { sizeBuild(); onScroll(); });
+  addEventListener("load", () => { sizeBuild(); onScroll(); });
+
+  /* ---------- errors accordion ---------- */
+  $$(".err__row").forEach(b => b.addEventListener("click", () => {
+    const li = b.parentElement, open = !li.classList.contains("open");
+    $$(".err.open").forEach(x => x.classList.remove("open"));
+    li.classList.toggle("open", open);
+    b.setAttribute("aria-expanded", open);
+  }));
+
+  /* ---------- tunnel forge ---------- */
+  const form = $("#forgeForm"), out = $("#forgeOut");
+  const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const clean = s => s.replace(/["`$]/g, "");
+  const chip = n => $(`.chips[data-name="${n}"] .on`, form).textContent;
+  const render = () => {
+    const f = Object.fromEntries(new FormData(form));
+    for (const k in f) f[k] = clean(f[k].trim());
+    const s = v => `<span class="c-str">"${esc(v)}"</span>`;
+    const k = v => `<span class="c-key">${v}</span>`;
+    const d = v => `<span class="c-dim">${v}</span>`;
+    out.innerHTML =
+`${d("# 0. Kill native IPsec leftovers (they speak IKEv1)")}
+Get-NetIPsecRule | Remove-NetIPsecRule -ErrorAction SilentlyContinue
+Get-NetIPsecMainModeRule | Remove-NetIPsecMainModeRule -ErrorAction SilentlyContinue
+
+${d("# 1. PSK comes from the environment. Never hardcode it.")}
+if (-not $env:VPN_PSK) { throw ${s("Set $env:VPN_PSK first")} }
+
+${d("# 2. Create the IKEv2 S2S interface")}
+Add-VpnS2SInterface \`
+    ${k("-Name")} ${s(f.name)} \`
+    ${k("-Destination")} ${s(f.gw)} \`
+    ${k("-Protocol")} Ikev2 \`
+    ${k("-AuthenticationMethod")} PSKOnly \`
+    ${k("-SharedSecret")} $env:VPN_PSK \`
+    ${k("-EncryptionType")} MaximumEncryption \`
+    ${k("-IPv4Subnet")} ${s(f.subnet + ":10")} \`
+    ${k("-SALifeTime")} 28800 \`
+    ${k("-MMSALifeTime")} 86400 \`
+    ${k("-SourceIpAddress")} ${s(f.local)} \`
+    ${k("-ResponderAuthenticationMethod")} PSKOnly
+
+${d("# 3. Custom policy: the part native IPsec ignores")}
+Set-VpnS2SInterface ${k("-Name")} ${s(f.name)} -CustomPolicy \`
+    ${k("-EncryptionMethod")} ${chip("p1e")} \`
+    ${k("-IntegrityCheckMethod")} ${chip("p1i")} \`
+    ${k("-DHGroup")} ${chip("p1d")} \`
+    ${k("-CipherTransformConstants")} ${chip("p2e")} \`
+    ${k("-AuthenticationTransformConstants")} ${chip("p2i")} \`
+    ${k("-PfsGroup")} ${chip("p2p")}
+
+${d("# 4. Explicit traffic selectors (no 0.0.0.0/0)")}
+$tsL = New-VpnTrafficSelector -TSPayloadId 0 -Type IPv4 \`
+    -IPAddressRange ${s(f.local)}, ${s(f.local)} -PortRange 0, 65535 -ProtocolId 0
+$tsR = New-VpnTrafficSelector -TSPayloadId 0 -Type IPv4 \`
+    -IPAddressRange ${s(f.rs)}, ${s(f.re)} -PortRange 0, 65535 -ProtocolId 0
+Set-VpnS2SInterface ${k("-Name")} ${s(f.name)} \`
+    -LocalVpnTrafficSelector $tsL -RemoteVpnTrafficSelector $tsR
+
+${d("# 5. Bring it up")}
+Connect-VpnS2SInterface ${k("-Name")} ${s(f.name)}
+Get-VpnS2SInterface ${k("-Name")} ${s(f.name)} | Select Name, ConnectionState, LastError`;
+    out.classList.remove("flash"); void out.offsetWidth; out.classList.add("flash");
+  };
+  form.addEventListener("input", render);
+  $$(".chips", form).forEach(group => group.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $$("button", group).forEach(x => x.classList.toggle("on", x === b));
+    render();
+  }));
+  render();
+
+  const copyBtn = $("#copyBtn");
+  copyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(out.textContent); copyBtn.textContent = "copied ✓"; }
+    catch { copyBtn.textContent = "select + ⌘C"; }
+    setTimeout(() => (copyBtn.textContent = "copy"), 1600);
+  });
+})();
+</script>
+</body>
+</html>
